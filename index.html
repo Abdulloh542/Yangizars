@@ -205,7 +205,7 @@
     </div>
 
     <div id="controls-hint">
-        <div class="key-action"><span class="icon">👋</span> <span>Swipe: Shakl</span></div>
+        <div class="key-action"><span class="icon">👋</span> <span>Ochiq Kaft + Swipe: Shakl</span></div>
         <div class="key-action"><span class="icon">☝️</span> <span>Aylantirish</span></div>
         <div class="key-action"><span class="icon">👌</span> <span>Zoom</span></div>
         <div class="key-action"><span class="icon">✊</span> <span>Qora Tuynuk</span></div>
@@ -225,7 +225,8 @@
             cameraZ: isMobile ? 35 : 30, // Mobilda kamera sal uzoqroq
             morphSpeed: 0.08, 
             interactionStrength: 2.0,
-            swipeThreshold: 0.08
+            // SWIPE THRESHOLD OSHIRILDI: Endi qiyinroq (0.08 dan 0.3 ga)
+            swipeThreshold: 0.3
         };
 
         // UI update for count
@@ -528,10 +529,29 @@
                 const currentX = (landmarks[8].x - 0.5) * 2;
                 const currentY = -(landmarks[8].y - 0.5) * 2;
 
-                // --- SWIPE LOGIC ---
+                // --- GESTURE & SWIPE LOGIC ---
+                
+                // 1. Check for Fist
+                const isFist = landmarks[8].y > landmarks[6].y && 
+                               landmarks[12].y > landmarks[10].y && 
+                               landmarks[16].y > landmarks[14].y && 
+                               landmarks[20].y > landmarks[18].y;
+
+                // 2. Check for Open Hand (Barmoqlar ochiqmi?)
+                const isIndexOpen = landmarks[8].y < landmarks[6].y;
+                const isMiddleOpen = landmarks[12].y < landmarks[10].y;
+                const isRingOpen = landmarks[16].y < landmarks[14].y;
+                const isPinkyOpen = landmarks[20].y < landmarks[18].y;
+                
+                // Kamida 3 ta barmoq ochiq bo'lsa "Ochiq Qo'l" deb hisoblaymiz
+                const openFingersCount = [isIndexOpen, isMiddleOpen, isRingOpen, isPinkyOpen].filter(Boolean).length;
+                const isHandOpen = openFingersCount >= 3;
+
                 const velocityX = currentX - state.lastHandX;
                 const now = Date.now();
-                if (Math.abs(velocityX) > CONFIG.swipeThreshold && now > state.swipeCooldown) {
+
+                // SWIPE LOGIC: Faqat qo'l ochiq bo'lganda va tez harakatlanganda ishlaydi
+                if (isHandOpen && Math.abs(velocityX) > CONFIG.swipeThreshold && now > state.swipeCooldown) {
                     state.swipeCooldown = now + 1000;
                     state.shapeIndex = (state.shapeIndex + 1) % shapes.length;
                     updateTargetShape(shapes[state.shapeIndex]);
@@ -548,11 +568,6 @@
                 const dy = landmarks[4].y - landmarks[8].y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 state.pinchDistance = dist;
-
-                const isFist = landmarks[8].y > landmarks[6].y && 
-                               landmarks[12].y > landmarks[10].y && 
-                               landmarks[16].y > landmarks[14].y && 
-                               landmarks[20].y > landmarks[18].y;
                 
                 if (isFist) {
                     state.gesture = 'fist';

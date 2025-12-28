@@ -2,7 +2,7 @@
 <html lang="uz">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Imo-ishora bilan boshqariladigan 3D Zarralar</title>
     <!-- MediaPipe Dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -19,6 +19,8 @@
             background-color: #050505;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             user-select: none;
+            -webkit-user-select: none;
+            touch-action: none; /* Mobil scrollni bloklash */
         }
         
         #canvas-container {
@@ -41,6 +43,7 @@
             flex-direction: column;
             gap: 10px;
             pointer-events: none; /* Let clicks pass through */
+            transition: all 0.3s ease;
         }
 
         .camera-feed {
@@ -101,6 +104,8 @@
             background: rgba(0,0,0,0.8);
             padding: 20px;
             border-radius: 15px;
+            width: 80%;
+            max-width: 400px;
         }
 
         /* Instructions Overlay */
@@ -113,6 +118,10 @@
             font-size: 14px;
             line-height: 1.6;
             pointer-events: none;
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(3px);
         }
         
         .key-action {
@@ -123,6 +132,47 @@
         
         .icon { font-size: 18px; }
 
+        /* --- MOBILE RESPONSIVE STYLES --- */
+        @media (max-width: 768px) {
+            #hud {
+                top: 10px;
+                right: 10px;
+                width: 140px; /* Kichikroq HUD */
+            }
+            .camera-feed {
+                height: 100px; /* Kichikroq kamera oynasi */
+            }
+            .status-panel {
+                padding: 10px;
+            }
+            h2 {
+                font-size: 10px;
+                margin-bottom: 5px;
+            }
+            .info-row {
+                font-size: 10px;
+                margin-bottom: 2px;
+            }
+            #controls-hint {
+                bottom: 10px;
+                left: 10px;
+                right: 10px;
+                font-size: 11px;
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+            }
+            .key-action {
+                background: rgba(0,0,0,0.5);
+                padding: 4px 8px;
+                border-radius: 15px;
+            }
+            #loading {
+                font-size: 18px;
+                padding: 15px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -133,19 +183,19 @@
 
     <div id="hud">
         <div class="camera-feed">
-            <video id="input_video"></video>
+            <video id="input_video" autoplay playsinline muted></video>
             <!-- Canvas for MediaPipe drawing overlay -->
-            <canvas id="output_canvas" width="200" height="150" style="position:absolute; top:0; left:0; width:100%; height:100%;"></canvas>
+            <canvas id="output_canvas"></canvas>
         </div>
         <div class="status-panel">
             <h2>Tizim Holati</h2>
             <div class="info-row">
                 <span>Shakl</span>
-                <span id="shape-name" class="value">Shar (Sphere)</span>
+                <span id="shape-name" class="value">Shar</span>
             </div>
             <div class="info-row">
                 <span>Zarralar</span>
-                <span class="value">15,000</span>
+                <span class="value" id="particle-count-display">15,000</span>
             </div>
             <div class="info-row">
                 <span>Holat</span>
@@ -155,23 +205,31 @@
     </div>
 
     <div id="controls-hint">
-        <div class="key-action"><span class="icon">👋</span> <span>Tez siljitish (Swipe): Shaklni o'zgartirish</span></div>
-        <div class="key-action"><span class="icon">☝️</span> <span>Harakat: Shaklni aylantirish</span></div>
-        <div class="key-action"><span class="icon">👌</span> <span>Chimchilash: Kattalashtirish/Kichiklashtirish</span></div>
-        <div class="key-action"><span class="icon">✊</span> <span>Musht: Qora tuynuk (Black Hole)</span></div>
+        <div class="key-action"><span class="icon">👋</span> <span>Swipe: Shakl</span></div>
+        <div class="key-action"><span class="icon">☝️</span> <span>Aylantirish</span></div>
+        <div class="key-action"><span class="icon">👌</span> <span>Zoom</span></div>
+        <div class="key-action"><span class="icon">✊</span> <span>Qora Tuynuk</span></div>
     </div>
 
     <script>
+        // --- Device Detection & Optimization ---
+        const isMobile = window.innerWidth < 768;
+        
         // --- Configuration ---
         const CONFIG = {
-            particleCount: 15000,
-            particleSize: 0.4,
+            // Mobilda kamroq, Desktopda ko'proq zarra
+            particleCount: isMobile ? 8000 : 15000,
+            // Mobilda zarralar kattaroq ko'rinishi kerak
+            particleSize: isMobile ? 0.6 : 0.4,
             defaultColor: 0x00ffff,
-            cameraZ: 30,
+            cameraZ: isMobile ? 35 : 30, // Mobilda kamera sal uzoqroq
             morphSpeed: 0.08, 
             interactionStrength: 2.0,
-            swipeThreshold: 0.08 // Tezlik chegarasi (swipe uchun)
+            swipeThreshold: 0.08
         };
+
+        // UI update for count
+        document.getElementById('particle-count-display').innerText = CONFIG.particleCount.toLocaleString();
 
         // --- Global State ---
         const state = {
@@ -180,8 +238,6 @@
             pinchDistance: 1.0, 
             gesture: 'none',
             shapeIndex: 0,
-            
-            // Swipe detection variables
             lastHandX: 0,
             swipeCooldown: 0
         };
@@ -196,7 +252,7 @@
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.z = CONFIG.cameraZ;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: true }); // Mobilda antialias o'chirish (tezlik uchun)
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         container.appendChild(renderer.domElement);
@@ -259,7 +315,7 @@
         const particles = new THREE.Points(geometry, material);
         scene.add(particles);
 
-        // --- 3. Shape Generators (Updated with New Shapes) ---
+        // --- 3. Shape Generators ---
         function generateShape(type) {
             const positions = [];
             const count = CONFIG.particleCount;
@@ -276,7 +332,6 @@
                     z = r * Math.cos(phi);
 
                 } else if (type === 'cube') {
-                    // Random point on surface of cube
                     const face = Math.floor(Math.random() * 6);
                     const u = (Math.random() - 0.5) * 20;
                     const v = (Math.random() - 0.5) * 20;
@@ -289,22 +344,18 @@
                     else if(face===5) { z=-d; x=u; y=v; }
 
                 } else if (type === 'pyramid') {
-                    // Square based pyramid
                     const h = 15;
                     const b = 15;
-                    // height factor 0 to 1
                     const t = Math.random();
-                    y = h * (t - 0.5); // centered Y
+                    y = h * (t - 0.5);
                     const currentBase = b * (1-t);
                     x = (Math.random() - 0.5) * 2 * currentBase;
                     z = (Math.random() - 0.5) * 2 * currentBase;
 
                 } else if (type === 'torus') {
-                    // Donut shape
                     const u = Math.random() * Math.PI * 2;
                     const v = Math.random() * Math.PI * 2;
-                    const R = 10; // Major radius
-                    const r = 4;  // Minor radius
+                    const R = 10; const r = 4;
                     x = (R + r * Math.cos(v)) * Math.cos(u);
                     y = (R + r * Math.cos(v)) * Math.sin(u);
                     z = r * Math.sin(v);
@@ -312,13 +363,8 @@
                 } else if (type === 'heart') {
                     const ht = Math.random() * Math.PI * 2;
                     const hphi = Math.random() * Math.PI; 
-                    // Improved 3D Heart
-                    // x = 16sin^3(t)
-                    // y = 13cos(t) - 5cos(2t) - 2cos(3t) - cos(4t)
-                    // z based on thickness profile
                     x = 16 * Math.pow(Math.sin(ht), 3);
                     y = 13 * Math.cos(ht) - 5 * Math.cos(2*ht) - 2 * Math.cos(3*ht) - Math.cos(4*ht);
-                    // Thickness varies with x
                     const thickness = 4 * Math.sin(hphi) * (1 - Math.abs(ht - Math.PI)/Math.PI);
                     z = (Math.random() - 0.5) * thickness * 4;
                     x *= 0.6; y *= 0.6;
@@ -371,19 +417,18 @@
             for(let i=0; i<CONFIG.particleCount * 3; i++) {
                 targetPositions[i] = newPos[i];
             }
-            // Translate name for UI if needed
             let displayName = type.charAt(0).toUpperCase() + type.slice(1);
-            if(type === 'cube') displayName = 'Kub (Cube)';
-            if(type === 'sphere') displayName = 'Shar (Sphere)';
+            if(type === 'cube') displayName = 'Kub';
+            if(type === 'sphere') displayName = 'Shar';
             if(type === 'pyramid') displayName = 'Piramida';
-            if(type === 'torus') displayName = 'Torus (Donut)';
+            if(type === 'torus') displayName = 'Torus';
             
             document.getElementById('shape-name').innerText = displayName;
             
             const colorAttribute = geometry.attributes.color;
             const hueBase = Math.random();
             for(let i=0; i<CONFIG.particleCount; i++) {
-                colorObj.setHSL((hueBase + Math.random() * 0.2) % 1, 0.8, 0.5);
+                colorObj.setHSL((hueBase + Math.random() * 0.2) % 1, 0.8, 0.6);
                 colorAttribute.setXYZ(i, colorObj.r, colorObj.g, colorObj.b);
             }
             colorAttribute.needsUpdate = true;
@@ -403,29 +448,19 @@
             const positionsAttribute = geometry.attributes.position;
             const array = positionsAttribute.array;
 
-            // Interaction - Hand moves Center? No, Hand rotates object now.
-            // But we keep slight position follow for "feeling"
-            const targetX = 0; 
-            const targetY = 0; 
-            const targetZ = 0;
+            const targetX = 0; const targetY = 0; const targetZ = 0;
 
             let expansionFactor = 1.0;
             if (state.handDetected) {
                 expansionFactor = 0.5 + (state.pinchDistance * 4); 
                 
-                // ROTATION LOGIC:
-                // Map Hand X (-1 to 1) to Rotation Y (Left/Right)
-                // Map Hand Y (-1 to 1) to Rotation X (Up/Down)
-                
-                // Smoothly rotate the whole particle container
-                const targetRotY = state.handPosition.x * 2.0; // Rotate up to ~110 degrees
+                const targetRotY = state.handPosition.x * 2.0; 
                 const targetRotX = state.handPosition.y * 2.0; 
 
                 particles.rotation.y += (targetRotY - particles.rotation.y) * 0.1;
                 particles.rotation.x += (targetRotX - particles.rotation.x) * 0.1;
 
             } else {
-                // Idle Auto Rotation
                 particles.rotation.y += 0.002;
             }
 
@@ -473,10 +508,15 @@
 
         function onResults(results) {
             loadingDiv.style.display = 'none';
+            
+            // Canvas o'lchamini videoga moslash
+            canvasElement.width = videoElement.videoWidth;
+            canvasElement.height = videoElement.videoHeight;
 
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            // Videoni chizmasak ham bo'ladi (HUDda ko'rinib turibdi), lekin aniqlik uchun chizib turamiz
+            // canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const landmarks = results.multiHandLandmarks[0];
@@ -485,23 +525,16 @@
 
                 state.handDetected = true;
 
-                // Current Hand Position
                 const currentX = (landmarks[8].x - 0.5) * 2;
                 const currentY = -(landmarks[8].y - 0.5) * 2;
 
-                // --- SWIPE DETECTION LOGIC ---
-                // Calculate velocity based on X movement
+                // --- SWIPE LOGIC ---
                 const velocityX = currentX - state.lastHandX;
-                
-                // If velocity is high and cooldown is over
                 const now = Date.now();
                 if (Math.abs(velocityX) > CONFIG.swipeThreshold && now > state.swipeCooldown) {
-                    state.swipeCooldown = now + 1000; // 1 second debounce
-                    
-                    // Switch Shape
+                    state.swipeCooldown = now + 1000;
                     state.shapeIndex = (state.shapeIndex + 1) % shapes.length;
                     updateTargetShape(shapes[state.shapeIndex]);
-                    
                     gestureText.innerText = "SWIPE! Shakl o'zgardi";
                     gestureText.style.color = "#00ff00";
                     setTimeout(() => gestureText.style.color = "#ffaa00", 500);
@@ -511,13 +544,11 @@
                 state.handPosition.x = currentX;
                 state.handPosition.y = currentY;
 
-                // Pinch Calc
                 const dx = landmarks[4].x - landmarks[8].x;
                 const dy = landmarks[4].y - landmarks[8].y;
                 const dist = Math.sqrt(dx*dx + dy*dy);
                 state.pinchDistance = dist;
 
-                // Gesture Rec
                 const isFist = landmarks[8].y > landmarks[6].y && 
                                landmarks[12].y > landmarks[10].y && 
                                landmarks[16].y > landmarks[14].y && 
@@ -525,10 +556,10 @@
                 
                 if (isFist) {
                     state.gesture = 'fist';
-                    gestureText.innerText = "Qora Tuynuk (Musht)";
+                    gestureText.innerText = "Qora Tuynuk";
                 } else if (Date.now() > state.swipeCooldown + 500) {
                      state.gesture = 'open';
-                     gestureText.innerText = "Boshqaruv (Aylantirish)";
+                     gestureText.innerText = "Boshqaruv";
                 }
 
             } else {
@@ -544,9 +575,11 @@
 
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
+            // Mobilda "Lite" (0) versiya, Desktopda "Full" (1)
+            modelComplexity: isMobile ? 0 : 1,
+            // Qorong'uda ishlashi uchun pastroq chegaralar
+            minDetectionConfidence: 0.4,
+            minTrackingConfidence: 0.4
         });
 
         hands.onResults(onResults);
@@ -555,8 +588,9 @@
             onFrame: async () => {
                 await hands.send({image: videoElement});
             },
-            width: 320,
-            height: 240
+            // Mobilda kichikroq video o'lchami = Yuqori FPS
+            width: isMobile ? 480 : 640,
+            height: isMobile ? 360 : 480
         });
 
         cameraUtils.start().catch(err => {
